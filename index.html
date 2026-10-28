@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>INSIDER — Finance Social Deduction</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <section id="landing" class="screen active">
+      <div class="landing-grid"></div>
+      <div class="brand-block">
+        <div class="eyebrow">FINANCE × SOCIAL DEDUCTION</div>
+        <h1>INSIDER<span>.</span></h1>
+        <p class="tagline">Trade fast. Read the room. Don't get caught.</p>
+        <div class="card lobby-card">
+          <div class="lobby-tabs">
+            <button class="tab active" data-mode="create">Create Room</button>
+            <button class="tab" data-mode="join">Join Room</button>
+          </div>
+          <label>Your name</label>
+          <input id="nameInput" maxlength="18" placeholder="e.g. Anand" autocomplete="off" />
+          <div id="joinRow" class="join-row hidden">
+            <label>Room code</label>
+            <input id="roomInput" maxlength="4" placeholder="ABCD" autocomplete="off" />
+          </div>
+          <button id="mainLobbyBtn" class="primary big">Create room</button>
+          <div id="landingError" class="error"></div>
+          <div class="micro">3–8 players · 6 trading days · 75 seconds per day</div>
+        </div>
+        <div class="howto">
+          <div><strong>01</strong><span>Get a secret role</span></div>
+          <div><strong>02</strong><span>Trade on breaking news</span></div>
+          <div><strong>03</strong><span>Find the Insider</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="game" class="screen">
+      <header class="topbar">
+        <div class="logo">INSIDER<span>.</span></div>
+        <div class="room-chip">ROOM <strong id="roomCodeLabel">----</strong></div>
+        <div class="day-chip"><span id="dayLabel">LOBBY</span></div>
+        <div class="timer-wrap"><div id="timer" class="timer">--:--</div><div class="timer-label">MARKET OPEN</div></div>
+      </header>
+
+      <main class="game-shell">
+        <aside class="left-panel">
+          <div id="roleCard" class="role-card card"></div>
+          <div class="card portfolio-card">
+            <div class="section-label">YOUR PORTFOLIO</div>
+            <div id="portfolioValue" class="portfolio-value">$10,000</div>
+            <div id="portfolioDelta" class="delta flat">+0.00%</div>
+            <div class="stat-row"><span>Cash</span><strong id="cashValue">$10,000</strong></div>
+            <div class="stat-row"><span>Long value</span><strong id="longValue">$0</strong></div>
+            <div class="stat-row"><span>Short liability</span><strong id="shortValue">$0</strong></div>
+          </div>
+          <div class="card players-card">
+            <div class="section-label">PLAYERS <span id="playerCount">0/8</span></div>
+            <div id="playersList" class="players-list"></div>
+          </div>
+        </aside>
+
+        <section class="center-panel">
+          <div id="lobbyPanel" class="center-card card"></div>
+          <div id="marketPanel" class="hidden">
+            <div class="news-card card">
+              <div class="news-kicker">BREAKING NEWS · DAY <span id="newsDay">1</span></div>
+              <h2 id="newsTitle">Market opens.</h2>
+              <p id="newsText">Headline loading...</p>
+              <div id="insiderIntel" class="insider-intel hidden"></div>
+            </div>
+            <div class="market-grid" id="marketGrid"></div>
+            <div class="orders-card card">
+              <div class="orders-head">
+                <div><div class="section-label">ORDER TICKETS</div><div class="subtle">Orders resolve together at the close.</div></div>
+                <div id="ordersStatus" class="order-status">No orders</div>
+              </div>
+              <div id="ordersList" class="orders-list"></div>
+            </div>
+            <div id="regulatorPanel" class="card regulator-panel hidden"></div>
+            <div id="betweenPanel" class="card between-panel hidden"></div>
+            <div id="finishedPanel" class="card finished-panel hidden"></div>
+          </div>
+        </section>
+
+        <aside class="right-panel">
+          <div class="card feed-card">
+            <div class="section-label">MARKET FEED</div>
+            <div id="feed" class="feed"></div>
+          </div>
+          <div class="card rules-card">
+            <div class="section-label">HOW TO WIN</div>
+            <p><strong>Trader</strong> — grow your portfolio.</p>
+            <p><strong>Insider</strong> — use tomorrow's headline without getting caught.</p>
+            <p><strong>Regulator</strong> — identify the Insider and earn the SEC bonus.</p>
+          </div>
+        </aside>
+      </main>
+    </section>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

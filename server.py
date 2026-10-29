@@ -41,6 +41,23 @@ NEWS = [
     {'title': 'NovaTech lands a massive government contract', 'text': 'NovaTech wins a multi-year technology contract.', 'effects': {'TECH': 0.18, 'OIL': 0.0, 'MEME': 0.02}, 'tag': 'contract'},
     {'title': 'Market-wide risk-off day', 'text': 'A surprise geopolitical headline pushes investors toward safety.', 'effects': {'TECH': -0.09, 'OIL': -0.06, 'MEME': -0.16}, 'tag': 'macro'},
 ]
+EASY_NEWS = [
+    {'title': 'NovaTech announces a successful new chip', 'text': 'Good news for NOVA: sales are expected to rise.', 'effects': {'TECH': .18, 'OIL': 0, 'MEME': 0}, 'tag': 'easy'},
+    {'title': 'NovaTech recalls its main product', 'text': 'Bad news for NOVA: a costly product recall.', 'effects': {'TECH': -.18, 'OIL': 0, 'MEME': 0}, 'tag': 'easy'},
+    {'title': 'Titan Oil discovers new reserves', 'text': 'Good news for TITN: more oil to sell.', 'effects': {'TECH': 0, 'OIL': .18, 'MEME': 0}, 'tag': 'easy'},
+    {'title': 'Titan Oil shuts down a pipeline', 'text': 'Bad news for TITN: production will fall.', 'effects': {'TECH': 0, 'OIL': -.18, 'MEME': 0}, 'tag': 'easy'},
+    {'title': 'MemeCo becomes a viral trend', 'text': 'Good news for MEME: many new fans are buying.', 'effects': {'TECH': 0, 'OIL': 0, 'MEME': .22}, 'tag': 'easy'},
+    {'title': 'MemeCo loses its biggest influencer', 'text': 'Bad news for MEME: interest is fading.', 'effects': {'TECH': 0, 'OIL': 0, 'MEME': -.22}, 'tag': 'easy'},
+]
+EXPERT_NEWS = [
+    {'title': 'AI boom meets an energy shortage', 'text': 'Chip demand rises, but power costs squeeze both tech and energy producers.', 'effects': {'TECH': .12, 'OIL': -.10, 'MEME': .04}, 'tag': 'expert'},
+    {'title': 'Rates rise as oil supplies tighten', 'text': 'Higher borrowing costs pressure speculative stocks while scarce oil boosts energy.', 'effects': {'TECH': -.09, 'OIL': .16, 'MEME': -.17}, 'tag': 'expert'},
+    {'title': 'MemeCo partners with NovaTech', 'text': 'A viral product tie-in helps both companies while capital rotates away from energy.', 'effects': {'TECH': .08, 'OIL': -.07, 'MEME': .20}, 'tag': 'expert'},
+    {'title': 'Supply chains reopen, sentiment sours', 'text': 'Lower transport costs aid technology, but risk appetite falls and oil demand slips.', 'effects': {'TECH': .09, 'OIL': -.13, 'MEME': -.11}, 'tag': 'expert'},
+    {'title': 'Energy subsidies spark a sector rotation', 'text': 'Investors favor Titan Oil as tech valuations and speculative shares come under pressure.', 'effects': {'TECH': -.09, 'OIL': .17, 'MEME': -.12}, 'tag': 'expert'},
+    {'title': 'Market rebounds despite an oil shock', 'text': 'Technology and speculative stocks recover as a disruption hits energy output.', 'effects': {'TECH': .11, 'OIL': -.17, 'MEME': .13}, 'tag': 'expert'},
+]
+NEWS_BY_DIFFICULTY = {'easy': EASY_NEWS, 'standard': NEWS, 'expert': EXPERT_NEWS}
 
 rooms = {}
 rooms_lock = threading.RLock()
@@ -82,15 +99,18 @@ def starting_public_player(name, color_index):
     }
 
 
-def make_room(host_name):
+def make_room(host_name, difficulty='standard'):
     host_name = host_name.strip()[:18]
     if not host_name:
         raise ValueError('Enter a name.')
-    shuffled = list(range(len(NEWS)))
+    if difficulty not in NEWS_BY_DIFFICULTY:
+        raise ValueError('Choose a valid difficulty.')
+    shuffled = list(range(len(NEWS_BY_DIFFICULTY[difficulty])))
     random.shuffle(shuffled)
     code = generate_code()
     room = {
         'code': code,
+        'difficulty': difficulty,
         'created_at': time.time(),
         'host_id': None,
         'status': 'lobby',
@@ -146,10 +166,11 @@ def assign_roles(room):
 
 
 def set_round_news(room, round_number):
+    news_pool = NEWS_BY_DIFFICULTY[room['difficulty']]
     idx = room['news_order'][round_number - 1]
-    room['current_news'] = NEWS[idx]
+    room['current_news'] = news_pool[idx]
     if round_number < TOTAL_ROUNDS:
-        room['next_news'] = NEWS[room['news_order'][round_number]]
+        room['next_news'] = news_pool[room['news_order'][round_number]]
     else:
         room['next_news'] = None
 
@@ -179,9 +200,9 @@ def effective_order_value(player, symbol):
         return 0
     qty = max(0, int(o.get('qty', 0)))
     side = o.get('side')
-    if side in ('BUY', 'SHORT'):
+    if side in ('BUY', 'COVER'):
         return qty
-    if side in ('SELL', 'COVER'):
+    if side in ('SELL', 'SHORT'):
         return -qty
     return 0
 
@@ -239,12 +260,13 @@ def resolve_round(room):
     room['previous_prices'] = old_prices
     room['prices'] = new_prices
 
-    # Execute all orders at the same closing price.
+    # Fill at the quoted opening price, then value positions at the new close.
+    # Otherwise players cannot profit from correctly predicting today's headline.
     for pid, p in room['players'].items():
         before = portfolio_value(p, old_prices)
         for s, order in p['orders'].items():
             side, qty = order['side'], int(order['qty'])
-            px = new_prices[s]
+            px = old_prices[s]
             if qty <= 0:
                 continue
             if side == 'BUY':
@@ -389,6 +411,7 @@ def public_state(room, pid):
             })
         return {
             'room': room['code'],
+            'difficulty': room['difficulty'],
             'status': room['status'],
             'round': room['round'],
             'total_rounds': TOTAL_ROUNDS,
@@ -492,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == '/api/create':
                 name = str(payload.get('name', ''))
                 with rooms_lock:
-                    room, pid = make_room(name)
+                    room, pid = make_room(name, str(payload.get('difficulty', 'standard')).lower())
                 return self._send(200, {'room': room['code'], 'player': pid})
 
             if parsed.path == '/api/join':

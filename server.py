@@ -18,6 +18,7 @@ TOTAL_ROUNDS = 6
 MIN_PLAYERS = 3
 MAX_PLAYERS = 8
 STARTING_CASH = 10_000.0
+POWERUPS = {'freeze': 600, 'goo': 450, 'insight': 1200, 'nuke': 6500}
 
 PUBLIC_DIR = Path(__file__).parent / 'public'
 
@@ -96,6 +97,11 @@ def starting_public_player(name, color_index):
         'history': [STARTING_CASH],
         'trade_log': [],
         'big_moment': None,
+        'frozen_until': 0,
+        'goo_until': 0,
+        'next_order_at': 0,
+        'insight': None,
+        'nuke_used': False,
     }
 
 
@@ -227,6 +233,11 @@ def clamp_order(player, symbol, side, qty, price):
 
 def submit_order(room, pid, symbol, side, qty):
     player = room['players'][pid]
+    now = time.time()
+    if player['frozen_until'] > now:
+        raise ValueError(f"Frozen! Try again in {int(player['frozen_until'] - now) + 1}s.")
+    if player['next_order_at'] > now:
+        raise ValueError(f"Goo slows your orders. Try again in {int(player['next_order_at'] - now) + 1}s.")
     if symbol not in STOCKS:
         raise ValueError('Unknown stock.')
     if side not in ('BUY', 'SELL', 'SHORT', 'COVER'):
@@ -237,6 +248,40 @@ def submit_order(room, pid, symbol, side, qty):
     capped = clamp_order(player, symbol, side, qty, price)
     player['orders'][symbol] = {'side': side, 'qty': capped}
     player['order_submitted'] = any(o['qty'] > 0 for o in player['orders'].values())
+    if player['goo_until'] > now:
+        player['next_order_at'] = now + 3
+
+
+def buy_powerup(room, pid, kind, target_id=None):
+    if room['status'] != 'round':
+        raise ValueError('Power-ups can only be used while the market is open.')
+    if kind not in POWERUPS:
+        raise ValueError('Unknown power-up.')
+    player = room['players'][pid]
+    now = time.time()
+    if player['frozen_until'] > now:
+        raise ValueError('You are frozen.')
+    if player['cash'] < POWERUPS[kind]:
+        raise ValueError('Not enough cash for this power-up.')
+    target = room['players'].get(target_id)
+    if kind in ('freeze', 'goo', 'nuke') and (not target or target_id == pid):
+        raise ValueError('Choose another player.')
+    if kind == 'insight' and room['round'] + 2 > TOTAL_ROUNDS:
+        raise ValueError('No news exists two days ahead.')
+    if kind == 'nuke' and (room['round'] < 4 or player['nuke_used']):
+        raise ValueError('Nuke unlocks on Day 4 and can be used once per player.')
+    player['cash'] = money(player['cash'] - POWERUPS[kind])
+    if kind == 'freeze':
+        target['frozen_until'] = max(now, target['frozen_until']) + 7
+    elif kind == 'goo':
+        target['goo_until'] = max(now, target['goo_until']) + 12
+    elif kind == 'insight':
+        player['insight'] = {'round': room['round'] + 2, 'title': NEWS_BY_DIFFICULTY[room['difficulty']][room['news_order'][room['round'] + 1]]['title']}
+    elif kind == 'nuke':
+        player['nuke_used'] = True
+        target['cash'] = money(target['cash'] - 3000)
+    if kind != 'insight':
+        room['event_feed'].append({'type': 'alert', 'text': f"{player['name']} used {kind.upper()} on {target['name']}!"})
 
 
 def resolve_round(room):
@@ -438,7 +483,12 @@ def public_state(room, pid):
                 'order_submitted': me['order_submitted'],
                 'history': me['history'],
                 'big_moment': me['big_moment'],
+                'frozen_remaining': max(0, round(me['frozen_until'] - now, 1)),
+                'goo_remaining': max(0, round(me['goo_until'] - now, 1)),
+                'insight': me['insight'] if me['insight'] and me['insight']['round'] > room['round'] else None,
+                'nuke_used': me['nuke_used'],
             },
+            'powerups': POWERUPS,
             'players': players_out,
             'regulator_used': room['regulator_used'],
             'accusation': room['accusation'],
@@ -549,6 +599,8 @@ class Handler(BaseHTTPRequestHandler):
                         start_game(room)
                     elif action == 'order':
                         submit_order(room, pid, str(payload.get('symbol')), str(payload.get('side')), int(payload.get('qty', 0)))
+                    elif action == 'powerup':
+                        buy_powerup(room, pid, str(payload.get('kind')), str(payload.get('target', '')))
                     elif action == 'next_round':
                         if pid != room['host_id']:
                             raise ValueError('Only the host can advance.')

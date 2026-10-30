@@ -40,6 +40,9 @@ function render(d){
   renderRole(d); renderPortfolio(d); renderPlayers(d); renderFeed(d);
   if(d.status==='lobby'){ $('lobbyPanel').classList.remove('hidden'); $('marketPanel').classList.add('hidden'); renderLobby(d); return; }
   $('lobbyPanel').classList.add('hidden'); $('marketPanel').classList.remove('hidden');
+  $('marketPanel').querySelector('.news-card').classList.toggle('hidden',d.status==='finished');
+  $('marketGrid').classList.toggle('hidden',d.status==='finished');
+  $('marketPanel').querySelector('.orders-card').classList.toggle('hidden',d.status!=='round');
   renderNews(d); renderStocks(d); renderOrders(d); renderRegulator(d); renderBetween(d); renderFinished(d);
 }
 function timeFmt(sec){const s=Math.ceil(sec);return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
@@ -85,7 +88,7 @@ function renderRegulator(d){
 function renderBetween(d){
   const panel=$('betweenPanel'); if(d.status!=='between'){panel.classList.add('hidden');return} panel.classList.remove('hidden');
   const r=d.resolution; const changes=Object.entries(r.price_changes).map(([s,v])=>`<div class="change-box"><span>${d.stocks[s].ticker}</span><strong class="${v>=0?'up':'down'}">${fmtPct(v)}</strong></div>`).join('');
-  panel.innerHTML=`<div class="section-label">DAY ${d.round} CLOSED</div><h3>Orders resolved together.</h3><div class="regulator-copy">${escapeHtml(r.news)} · Current leader: <strong>${escapeHtml(r.leader)}</strong></div><div class="price-change">${changes}</div><div class="regulator-copy">Next stage begins automatically in ${Math.ceil(d.seconds_remaining)} seconds.</div>${d.me.id===d.host_id?`<button class="primary next-btn" onclick="postAction('next_round')">${d.round>=d.total_rounds?'See final results':'Start next day'}</button>`:''}`;
+  panel.innerHTML=`<div class="section-label">DAY ${d.round} CLOSED</div><h3>Market pulse</h3><div class="regulator-copy">${escapeHtml(r.news)} · Current leader: <strong>${escapeHtml(r.leader)}</strong></div><div class="price-change">${changes}</div><div class="regulator-copy">Trading pressure: ${Object.entries(r.pressure||{}).map(([s,v])=>`${escapeHtml(d.stocks[s].ticker)} ${escapeHtml(v)}`).join(' · ')}</div><div class="regulator-copy">Next stage begins automatically in ${Math.ceil(d.seconds_remaining)} seconds.</div>${d.me.id===d.host_id?`<button class="primary next-btn" onclick="postAction('next_round')">${d.round>=d.total_rounds?'See final results':'Start next day'}</button>`:''}`;
 }
 function renderFinished(d){
   const panel=$('finishedPanel'); if(d.status!=='finished'){panel.classList.add('hidden');return} panel.classList.remove('hidden');

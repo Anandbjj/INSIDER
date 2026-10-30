@@ -21,6 +21,14 @@
           </div>
           <label>Your name</label>
           <input id="nameInput" maxlength="18" placeholder="e.g. Anand" autocomplete="off" />
+          <div id="difficultyRow">
+            <label for="difficultyInput">Market difficulty</label>
+            <select id="difficultyInput" class="select" style="width:100%;margin:8px 0 14px;padding:12px">
+              <option value="easy">Easy — one clear stock move</option>
+              <option value="standard" selected>Standard — varied market headlines</option>
+              <option value="expert">Expert — several stocks move together</option>
+            </select>
+          </div>
           <div id="joinRow" class="join-row hidden">
             <label>Room code</label>
             <input id="roomInput" maxlength="4" placeholder="ABCD" autocomplete="off" />

@@ -13,14 +13,14 @@ function setError(msg=''){ $('landingError').textContent=msg }
 
 document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
-  state.mode=btn.dataset.mode; $('joinRow').classList.toggle('hidden',state.mode!=='join'); $('mainLobbyBtn').textContent=state.mode==='create'?'Create room':'Join room'; setError('');
+  state.mode=btn.dataset.mode; $('joinRow').classList.toggle('hidden',state.mode!=='join'); $('difficultyRow').classList.toggle('hidden',state.mode==='join'); $('mainLobbyBtn').textContent=state.mode==='create'?'Create room':'Join room'; setError('');
 }));
 
 $('mainLobbyBtn').onclick=async()=>{
   setError(''); const name=$('nameInput').value.trim();
   if(!name){setError('Enter your name.');return}
   try{
-    const d=state.mode==='create'?await api('/api/create',{name}):await api('/api/join',{name,room:$('roomInput').value.trim()});
+    const d=state.mode==='create'?await api('/api/create',{name,difficulty:$('difficultyInput').value}):await api('/api/join',{name,room:$('roomInput').value.trim()});
     state.room=d.room; state.player=d.player; localStorage.setItem('insider-session',JSON.stringify({room:d.room,player:d.player})); $('landing').classList.remove('active'); $('game').classList.add('active'); $('roomCodeLabel').textContent=state.room; startPolling();
   }catch(e){setError(e.message)}
 };
@@ -29,7 +29,7 @@ async function postAction(action, extra={}){
   try{await api('/api/action',{room:state.room,player:state.player,action,...extra}); await poll();}catch(e){alert(e.message)}
 }
 async function poll(){
-  if(!state.room)return; try{const r=await fetch(`/api/state?room=${encodeURIComponent(state.room)}&player=${encodeURIComponent(state.player)}`); if(!r.ok) return; const d=await r.json(); render(d)}catch{}
+  if(!state.room)return; try{const r=await fetch(`/api/state?room=${encodeURIComponent(state.room)}&player=${encodeURIComponent(state.player)}`); if(r.status===404){goHome();setError('That room ended when the server restarted. Create a new room.');return} if(!r.ok) return; const d=await r.json(); render(d)}catch{}
 }
 let pollingStarted=false;
 function startPolling(){poll(); if(!pollingStarted){pollingStarted=true;setInterval(poll,1000)}}
@@ -60,7 +60,7 @@ function renderPlayers(d){$('playerCount').textContent=`${d.players.length}/8`; 
 function renderFeed(d){$('feed').innerHTML=d.feed.map(x=>`<div class="feed-item ${x.type==='alert'?'alert':x.type==='resolution'?'resolution':''}">${escapeHtml(x.text)}</div>`).join('')||'<div class="feed-item">No events yet.</div>'}
 function renderLobby(d){
   const isHost=d.me.id===d.host_id;
-  $('lobbyPanel').innerHTML=`<div class="section-label">PRIVATE MARKET</div><div class="lobby-title">Room <span>${d.room}</span></div><div class="room-code-large">${d.room}</div><div class="lobby-copy">Send this code or an invite link to your friends. They can join from their own devices. The host starts at 3–8 players.</div><button class="primary" onclick="copyInvite('${d.room}')">Copy invite link</button><div class="player-pills">${d.players.map((p,i)=>`<div class="pill">${escapeHtml(p.name)} ${p.id===d.host_id?'<span class="host-tag">HOST</span>':''}</div>`).join('')}</div>${isHost?`<button class="primary" ${d.players.length>=3?'':'disabled'} onclick="postAction('start')">${d.players.length<3?'Need 3 players':'Start market'}</button>`:'<div class="lobby-copy">Waiting for the host to start…</div>'}`;
+  $('lobbyPanel').innerHTML=`<div class="section-label">PRIVATE MARKET · ${escapeHtml(d.difficulty.toUpperCase())}</div><div class="lobby-title">Room <span>${d.room}</span></div><div class="room-code-large">${d.room}</div><div class="lobby-copy">Send this code or an invite link to your friends. They can join from their own devices. The host starts at 3–8 players.</div><button class="primary" onclick="copyInvite('${d.room}')">Copy invite link</button><div class="player-pills">${d.players.map((p,i)=>`<div class="pill">${escapeHtml(p.name)} ${p.id===d.host_id?'<span class="host-tag">HOST</span>':''}</div>`).join('')}</div>${isHost?`<button class="primary" ${d.players.length>=3?'':'disabled'} onclick="postAction('start')">${d.players.length<3?'Need 3 players':'Start market'}</button>`:'<div class="lobby-copy">Waiting for the host to start…</div>'}`;
 }
 function renderNews(d){
   $('newsDay').textContent=d.round; $('newsTitle').textContent=d.news?.title||'Market opens.'; $('newsText').textContent=d.news?.text||'';
@@ -92,7 +92,7 @@ function renderFinished(d){
   const sorted=[...d.players].sort((a,b)=>b.portfolio-a.portfolio); const winner=sorted[0];
   const roles=sorted.map((p,i)=>`<div class="rank"><div class="n">#${i+1}</div><div>${escapeHtml(p.name)} ${p.id===d.me.id?'<small>(you)</small>':''}<div class="subtle">${p.role}${p.caught?' · CAUGHT':''}</div></div><div class="v">${fmtMoney(p.portfolio)}</div></div>`).join('');
   const me=d.me; let chart=''; if(me.history&&me.history.length){chart=drawChart(me.history)}
-  panel.innerHTML=`<div class="section-label">FINAL BELL</div><h3>The market is closed.</h3><div class="winner"><span>${escapeHtml(winner.name)}</span> wins with ${fmtMoney(winner.portfolio)}</div><div class="rankings">${roles}</div><div class="reveal"><div class="section-label">YOUR PORTFOLIO PATH</div>${chart}<div class="moment">${me.big_moment?`Biggest swing: Day ${me.big_moment.round}, ${me.big_moment.delta>=0?'+':''}${fmtMoney(me.big_moment.delta)} · ${escapeHtml(me.big_moment.news)}`:'No major swing recorded.'}</div></div>`;
+  panel.innerHTML=`<div class="section-label">FINAL BELL</div><h3>The market is closed.</h3><div class="winner"><span>${escapeHtml(winner.name)}</span> wins with ${fmtMoney(winner.portfolio)}</div><div class="rankings">${roles}</div><button class="primary" onclick="goHome()">Back to homepage</button><div class="reveal"><div class="section-label">YOUR PORTFOLIO PATH</div>${chart}<div class="moment">${me.big_moment?`Biggest swing: Day ${me.big_moment.round}, ${me.big_moment.delta>=0?'+':''}${fmtMoney(me.big_moment.delta)} · ${escapeHtml(me.big_moment.news)}`:'No major swing recorded.'}</div></div>`;
 }
 function drawChart(values){
   const w=720,h=170,p=18; const min=Math.min(...values),max=Math.max(...values),range=Math.max(1,max-min); const pts=values.map((v,i)=>{const x=p+(w-p*2)*(i/(values.length-1||1));const y=h-p-(v-min)/range*(h-p*2);return `${x},${y}`}).join(' '); const circles=values.map((v,i)=>{const x=p+(w-p*2)*(i/(values.length-1||1));const y=h-p-(v-min)/range*(h-p*2);return `<circle cx="${x}" cy="${y}" r="4"/>`}).join(''); return `<svg class="chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="${p}" y1="${h-p}" x2="${w-p}" y2="${h-p}" stroke="#23303a"/><polyline points="${pts}" fill="none" stroke="#d8ff5f" stroke-width="3"/>${circles}</svg>`;
@@ -102,3 +102,5 @@ function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':
 function copyInvite(room){navigator.clipboard.writeText(location.origin+'/?room='+room).then(()=>alert('Invite link copied')).catch(()=>alert('Share this page address and room code: '+room))}
 if(inviteRoom){document.querySelector('[data-mode="join"]').click();$('roomInput').value=inviteRoom.toUpperCase()}
 if(savedSession?.room&&savedSession?.player){state.room=savedSession.room;state.player=savedSession.player;$('landing').classList.remove('active');$('game').classList.add('active');$('roomCodeLabel').textContent=state.room;startPolling()}
+
+function goHome(){localStorage.removeItem('insider-session');state.room=null;state.player=null;state.data=null;state.ordersKey=null;history.replaceState(null,'',location.pathname);$('game').classList.remove('active');$('landing').classList.add('active');$('nameInput').value=''}

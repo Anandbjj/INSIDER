@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { mode: 'create', room: null, player: null, data: null, lastRound: null, ordersKey: null };
+const state = { mode: 'create', room: null, player: null, data: null, lastRound: null, ordersKey: null, dirty: false };
 const savedSession = JSON.parse(localStorage.getItem('insider-session') || 'null');
 const inviteRoom = new URLSearchParams(location.search).get('room');
 
@@ -26,7 +26,7 @@ $('mainLobbyBtn').onclick=async()=>{
 };
 
 async function postAction(action, extra={}){
-  try{await api('/api/action',{room:state.room,player:state.player,action,...extra}); await poll();}catch(e){alert(e.message)}
+  try{await api('/api/action',{room:state.room,player:state.player,action,...extra}); if(action==='order')state.dirty=false; await poll();}catch(e){alert(e.message)}
 }
 async function poll(){
   if(!state.room)return; try{const r=await fetch(`/api/state?room=${encodeURIComponent(state.room)}&player=${encodeURIComponent(state.player)}`); if(r.status===404){goHome();setError('That room ended when the server restarted. Create a new room.');return} if(!r.ok) return; const d=await r.json(); render(d)}catch{}
@@ -43,7 +43,7 @@ function render(d){
   $('marketPanel').querySelector('.news-card').classList.toggle('hidden',d.status==='finished');
   $('marketGrid').classList.toggle('hidden',d.status==='finished');
   $('marketPanel').querySelector('.orders-card').classList.toggle('hidden',d.status!=='round');
-  renderNews(d); renderStocks(d); renderOrders(d); renderRegulator(d); renderBetween(d); renderFinished(d);
+  renderNews(d); renderStocks(d); renderOrders(d); renderPowerups(d); renderRegulator(d); renderBetween(d); renderFinished(d);
 }
 function timeFmt(sec){const s=Math.ceil(sec);return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`}
 function roleClass(role){return role==='INSIDER'?'insider':role==='REGULATOR'?'regulator':'trader'}
@@ -59,7 +59,7 @@ function renderPortfolio(d){
   $('longValue').textContent=fmtMoney(long); $('shortValue').textContent=fmtMoney(short);
   const base=(p.history&&p.history[0])||10000; const change=(p.portfolio/base-1)*100; const el=$('portfolioDelta'); el.textContent=fmtPct(change); el.className='delta '+(change>0.005?'up':change<-0.005?'down':'flat');
 }
-function renderPlayers(d){$('playerCount').textContent=`${d.players.length}/8`; $('playersList').innerHTML=d.players.map(p=>`<div class="player-row"><span class="dot"></span><span class="player-name ${p.id===d.me.id?'you':''}">${escapeHtml(p.name)}${p.id===d.me.id?' · YOU':''}${p.caught?' · CAUGHT':''}</span><span class="player-val ${p.caught?'caught':''}">${fmtMoney(p.portfolio)}</span></div>`).join('')}
+function renderPlayers(d){$('playerCount').textContent=`${d.players.length}/8`; $('playersList').innerHTML=[...d.players].sort((a,b)=>b.portfolio-a.portfolio).map((p,i)=>`<div class="player-row"><span class="dot" style="background:${i===0?'#d8ff5f':'#7e8a93'}"></span><span class="player-name ${p.id===d.me.id?'you':''}">#${i+1} ${escapeHtml(p.name)}${p.id===d.me.id?' · YOU':''}${p.caught?' · CAUGHT':''}</span><span class="player-val ${p.caught?'caught':''}">${fmtMoney(p.portfolio)}</span></div>`).join('')}
 function renderFeed(d){$('feed').innerHTML=d.feed.map(x=>`<div class="feed-item ${x.type==='alert'?'alert':x.type==='resolution'?'resolution':''}">${escapeHtml(x.text)}</div>`).join('')||'<div class="feed-item">No events yet.</div>'}
 function renderLobby(d){
   const isHost=d.me.id===d.host_id;
@@ -73,12 +73,22 @@ function renderStocks(d){
   $('marketGrid').innerHTML=Object.entries(d.stocks).map(([s,st])=>{const px=d.prices[s], prev=d.previous_prices[s], pct=prev?((px/prev)-1)*100:0; return `<div class="stock-card"><div class="stock-head"><div><div class="ticker">${st.icon} ${st.ticker}</div><div class="stock-name">${st.name}</div></div><div class="pct ${pct>0.01?'up':pct<-0.01?'down':'flat'}">${fmtPct(pct)}</div></div><div class="stock-price">${fmtMoney(px)}</div><div class="price">Last close ${fmtMoney(prev)}</div></div>`}).join('')
 }
 function renderOrders(d){
+  if(!state.dirty)$('ordersStatus').textContent=d.me.order_submitted?'✓ ORDER SAVED · fills at the bell':'No orders saved';
   const key=JSON.stringify([d.status,d.round,d.me.orders,d.prices]);
   if (state.ordersKey===key) return;
   state.ordersKey=key;
-  const rows=Object.entries(d.stocks).map(([s,st])=>{const o=d.me.orders[s]||{side:'BUY',qty:0}; return `<div class="order-ticket"><div><div class="name">${st.icon} ${st.ticker} <span class="stock-name">${st.name}</span></div><div class="price">${fmtMoney(d.prices[s])} · Long ${d.me.holdings[s]} · Short ${d.me.shorts[s]}</div></div><select class="select" id="side-${s}"><option ${o.side==='BUY'?'selected':''}>BUY</option><option ${o.side==='SELL'?'selected':''}>SELL</option><option ${o.side==='SHORT'?'selected':''}>SHORT</option><option ${o.side==='COVER'?'selected':''}>COVER</option></select><input class="qty" id="qty-${s}" type="number" min="0" step="1" value="${o.qty||''}" placeholder="Qty"/><button class="save-order ${o.qty?'saved':''}" onclick="saveOrder('${s}')">${o.qty?'Saved':'Set'}</button></div>`}).join('');
-  $('ordersList').innerHTML=rows; $('ordersStatus').textContent=d.me.order_submitted?'Orders queued for close':'No orders';
+  const rows=Object.entries(d.stocks).map(([s,st])=>{const o=d.me.orders[s]||{side:'BUY',qty:0}; return `<div class="order-ticket"><div><div class="name">${st.icon} ${st.ticker} <span class="stock-name">${st.name}</span></div><div class="price">${o.qty?`✓ ${o.side} ${o.qty} shares saved · `:''}${fmtMoney(d.prices[s])} · Long ${d.me.holdings[s]} · Short ${d.me.shorts[s]}</div></div><select class="select" id="side-${s}" onchange="markDirty('${s}')"><option ${o.side==='BUY'?'selected':''}>BUY</option><option ${o.side==='SELL'?'selected':''}>SELL</option><option ${o.side==='SHORT'?'selected':''}>SHORT</option><option ${o.side==='COVER'?'selected':''}>COVER</option></select><input class="qty" id="qty-${s}" oninput="markDirty('${s}')" type="number" min="0" step="1" value="${o.qty||''}" placeholder="Qty"/><button class="save-order ${o.qty?'saved':''}" onclick="saveOrder('${s}')">${o.qty?'Saved ✓':'Set order'}</button></div>`}).join('');
+  $('ordersList').innerHTML=rows;
 }
+function renderPowerups(d){
+ const panel=$('powerPanel');if(d.status!=='round'){panel.classList.add('hidden');return}panel.classList.remove('hidden');
+ const previous=$('powerTarget')?.value||'';
+ const targetOptions=d.players.filter(p=>p.id!==d.me.id).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+ panel.innerHTML=`<div class="section-label">MARKET SABOTAGE · SPEND CASH</div><h3>Buy a power-up</h3><p class="subtle">Power-ups lower your net worth. Pick another player for Freeze, Goo, or Nuke.</p><select id="powerTarget" class="select"><option value="">Choose target</option>${targetOptions}</select><div class="power-grid"><button onclick="usePower('freeze')">❄️ Freeze · $600<small>Block orders for 7 seconds</small></button><button onclick="usePower('goo')">🫧 Goo · $450<small>Slow orders for 12 seconds</small></button><button onclick="usePower('insight')">🔮 Insight · $1,200<small>See news two days ahead</small></button><button ${d.round<4||d.me.nuke_used?'disabled':''} onclick="usePower('nuke')">☢️ Nuke · $6,500<small>Day 4+ · target loses $3,000</small></button></div>${d.me.insight?`<div class="insight-note">PRIVATE INTEL · DAY ${d.me.insight.round}: ${escapeHtml(d.me.insight.title)}</div>`:''}${d.me.frozen_remaining>0?`<div class="effect-warning">❄️ Frozen: ${Math.ceil(d.me.frozen_remaining)}s</div>`:''}${d.me.goo_remaining>0?`<div class="effect-warning">🫧 Goo: ${Math.ceil(d.me.goo_remaining)}s · orders slowed</div>`:''}`;
+ if(previous&&[...$('powerTarget').options].some(o=>o.value===previous))$('powerTarget').value=previous;
+}
+function usePower(kind){const target=$('powerTarget').value;if(kind!=='insight'&&!target){alert('Choose another player first.');return}postAction('powerup',{kind,target})}
+function markDirty(s){state.dirty=true;const button=document.getElementById('side-'+s)?.closest('.order-ticket')?.querySelector('.save-order');if(button){button.textContent='Save change';button.classList.remove('saved')}document.getElementById('ordersStatus').textContent='Unsaved changes — press Save change'}
 function saveOrder(s){postAction('order',{symbol:s,side:$(`side-${s}`).value,qty:Number($(`qty-${s}`).value||0)})}
 function renderRegulator(d){
   const panel=$('regulatorPanel'); if(d.me.role!=='REGULATOR'||d.status==='finished'){panel.classList.add('hidden');return} panel.classList.remove('hidden');
@@ -106,4 +116,4 @@ function copyInvite(room){navigator.clipboard.writeText(location.origin+'/?room=
 if(inviteRoom){document.querySelector('[data-mode="join"]').click();$('roomInput').value=inviteRoom.toUpperCase()}
 if(savedSession?.room&&savedSession?.player){state.room=savedSession.room;state.player=savedSession.player;$('landing').classList.remove('active');$('game').classList.add('active');$('roomCodeLabel').textContent=state.room;startPolling()}
 
-function goHome(){localStorage.removeItem('insider-session');state.room=null;state.player=null;state.data=null;state.ordersKey=null;history.replaceState(null,'',location.pathname);$('game').classList.remove('active');$('landing').classList.add('active');$('nameInput').value=''}
+function goHome(){localStorage.removeItem('insider-session');state.room=null;state.player=null;state.data=null;state.ordersKey=null;state.dirty=false;history.replaceState(null,'',location.pathname);$('game').classList.remove('active');$('landing').classList.add('active');$('nameInput').value=''}

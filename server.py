@@ -12,8 +12,8 @@ from pathlib import Path
 
 HOST = '0.0.0.0'
 PORT = int(os.environ.get('PORT', '8000'))
-ROUND_SECONDS = 75
-BETWEEN_SECONDS = 25
+ROUND_SECONDS = 40
+BETWEEN_SECONDS = 10
 TOTAL_ROUNDS = 6
 MIN_PLAYERS = 3
 MAX_PLAYERS = 8
@@ -252,8 +252,9 @@ def resolve_round(room):
     new_prices = {}
     for s in STOCKS:
         trader_count = max(1, len(room['players']))
-        demand_impact = max(-0.07, min(0.07, demand[s] / (trader_count * 60.0)))
-        noise = random.uniform(-0.018, 0.018)
+        demand_impact = max(-0.12, min(0.12, demand[s] / (trader_count * 45.0)))
+        volatility = {'easy': .01, 'standard': .035, 'expert': .065}[room['difficulty']]
+        noise = random.uniform(-volatility, volatility)
         total = effects[s] + demand_impact + noise
         new_prices[s] = money(max(5.0, old_prices[s] * (1 + total)))
 
@@ -306,6 +307,7 @@ def resolve_round(room):
         'news': room['current_news']['title'],
         'price_changes': {s: money((new_prices[s] / old_prices[s] - 1) * 100) for s in STOCKS},
         'leader': max(room['players'].values(), key=lambda p: portfolio_value(p, new_prices))['name'],
+        'pressure': {s: ('buyers' if demand[s] > 0 else 'sellers' if demand[s] < 0 else 'balanced') for s in STOCKS},
     }
     room['event_feed'].append({'type': 'resolution', 'text': f"Day {room['round']} closed. {room['current_news']['title']}"})
     room['round_started_at'] = None
@@ -379,7 +381,8 @@ def maybe_progress(room):
             if elapsed >= room['round_seconds']:
                 resolve_round(room)
         if room['status'] == 'between' and room['between_started_at'] is not None:
-            if time.time() - room['between_started_at'] >= BETWEEN_SECONDS:
+            pause = 18 if room['round'] >= 4 and not room['regulator_used'] else BETWEEN_SECONDS
+            if time.time() - room['between_started_at'] >= pause:
                 next_round(room)
 
 
@@ -391,7 +394,8 @@ def public_state(room, pid):
         if room['status'] == 'round' and room['round_started_at']:
             remaining = max(0, room['round_seconds'] - (now - room['round_started_at']))
         elif room['status'] == 'between' and room['between_started_at']:
-            remaining = max(0, BETWEEN_SECONDS - (now - room['between_started_at']))
+            pause = 18 if room['round'] >= 4 and not room['regulator_used'] else BETWEEN_SECONDS
+            remaining = max(0, pause - (now - room['between_started_at']))
         me = room['players'][pid]
         players_out = []
         for other_id, p in room['players'].items():
